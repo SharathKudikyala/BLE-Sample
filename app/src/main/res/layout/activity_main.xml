@@ -44,9 +44,10 @@
         android:layout_margin="8dp"
         android:fillViewport="true"
         app:layout_constraintEnd_toEndOf="@id/listViewBluetoothDevices"
-        app:layout_constraintHeight_percent="0.5"
+        app:layout_constraintHeight_default="spread"
         app:layout_constraintStart_toStartOf="@id/listViewBluetoothDevices"
-        app:layout_constraintTop_toBottomOf="@id/listViewBluetoothDevices">
+        app:layout_constraintTop_toBottomOf="@id/listViewBluetoothDevices"
+        app:layout_constraintBottom_toTopOf="@id/etMessage">
 
         <TextView
             android:id="@+id/tvLog"
@@ -63,7 +64,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="8dp"
-        android:hint="Enter a message - v1.1"
+        android:hint="Enter message"
         android:maxLines="1"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@id/ibSendMessage"
@@ -75,7 +76,7 @@
         android:layout_height="wrap_content"
         android:backgroundTint="@android:color/transparent"
         android:src="@android:drawable/ic_menu_send"
-        android:tint="@android:color/black"
+        android:tint="#63519F"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/etMessage" />

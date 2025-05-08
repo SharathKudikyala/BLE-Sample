@@ -15,7 +15,6 @@ import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.ParcelUuid
-import android.util.Log
 import com.app.blesample.BLECentralManager.BLECallback
 import java.util.UUID
 
@@ -30,8 +29,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
 
     fun startAdvertising() {
         if (!bluetoothAdapter.isMultipleAdvertisementSupported) {
-            callback.onLog("E: BLE Advertising not supported on this device")
-            Log.e(TAG, "BLE Advertising not supported on this device")
+            callback.onLog(LogLevel.ERROR, "BLE Advertising not supported on this device")
             return
         }
 
@@ -53,18 +51,16 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-            callback.onLog("I: Advertising started successfully")
-            Log.i(TAG, "Advertising started successfully")
+            callback.onLog(LogLevel.INFO, "Advertising started successfully")
         }
 
         override fun onStartFailure(errorCode: Int) {
-            callback.onLog("E: Advertising failed: $errorCode")
-            Log.e(TAG, "Advertising failed: $errorCode")
+            callback.onLog(LogLevel.ERROR, "Advertising failed: $errorCode")
         }
     }
 
     private fun startGattServer() {
-        callback.onLog("I: Start Gatt Server")
+        callback.onLog(LogLevel.DEBUG, "Start Gatt Server")
         gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
 
         val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
@@ -102,12 +98,18 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             device?.let {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     connectedDevices.add(device)
-                    callback.onLog("I: Server Connected to ${device.address}")
-                    callback.onLog("I: Server Connected Clients Count = ${connectedDevices.size}")
+                    callback.onLog(LogLevel.INFO, "Server Connected to ${device.address}")
+                    callback.onLog(
+                        LogLevel.INFO,
+                        "Connected Clients Count = ${connectedDevices.size}"
+                    )
                 } else {
                     connectedDevices.remove(device)
-                    callback.onLog("I: Server Disconnected from ${device.address}")
-                    callback.onLog("I: Server Connected Clients Count = ${connectedDevices.size}")
+                    callback.onLog(LogLevel.INFO, "Server Disconnected from ${device.address}")
+                    callback.onLog(
+                        LogLevel.INFO,
+                        "Connected Clients Count = ${connectedDevices.size}"
+                    )
                 }
             }
         }
@@ -119,7 +121,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             if (characteristic?.uuid == CHARACTERISTIC_UUID) {
                 val value = "Server Ready".toByteArray(Charsets.UTF_8)
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value)
-                callback.onLog("I: Read request from ${device?.address}")
+                callback.onLog(LogLevel.DEBUG, "Read request from ${device?.address}")
             }
         }
 
@@ -128,7 +130,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?
         ) {
             val message = value?.toString(Charsets.UTF_8)
-            callback.onLog("I: Message from ${device?.address}: $message")
+            callback.onLog(LogLevel.INFO, "Message from ${device?.address}: $message")
 
             if (responseNeeded) {
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
@@ -156,13 +158,16 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
                         BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
                     }
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
-                callback.onLog("I: Notification subscription change from ${device?.address}")
+                callback.onLog(
+                    LogLevel.DEBUG,
+                    "Notification subscription change from ${device?.address}"
+                )
             }
         }
     }
 
     fun stopAdvertising() {
-        callback.onLog("I: Advertising Stopped")
+        callback.onLog(LogLevel.INFO, "Advertising Stopped")
         advertiser?.stopAdvertising(advertiseCallback)
         gattServer?.close()
     }
@@ -176,7 +181,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             gattServer?.notifyCharacteristicChanged(device, characteristic, false)
         }
 
-        callback.onLog("I: Server Sent message to central -> $message")
+        callback.onLog(LogLevel.INFO, "Server Sent message to client -> $message")
     }
 
     companion object {

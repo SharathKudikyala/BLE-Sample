@@ -1,19 +1,25 @@
 package com.app.blesample
 
 import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Bundle
+import android.provider.Settings
 import android.text.method.ScrollingMovementMethod
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.app.blesample.databinding.ActivityMainBinding
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
@@ -24,6 +30,7 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
     private lateinit var deviceAdapter: ArrayAdapter<String>
     private val foundDevices = mutableListOf<BluetoothDevice>()
     private val deviceNames = mutableListOf<String>()
+    private val logFilter = LogFilter.QA
 
     private val permissions = arrayOf(
         Manifest.permission.BLUETOOTH_SCAN,
@@ -52,6 +59,8 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
         deviceAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, deviceNames)
         binding.listViewBluetoothDevices.adapter = deviceAdapter
 
+        checkPermissionsAndStates()
+
         bleCentralManager.scanResultListener = { device ->
             runOnUiThread {
                 if (!foundDevices.contains(device)) {
@@ -66,15 +75,16 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
         binding.tvLog.movementMethod = ScrollingMovementMethod()
         binding.listViewBluetoothDevices.setOnItemClickListener { _, _, position, _ ->
             val device = foundDevices[position]
-            bleCentralManager.connectToDevice(device)  // you'll expose this function from BLEManager
+            bleCentralManager.connectToDevice(device)
         }
 
         binding.btnCentralMode.setOnClickListener {
             if (hasPermissions()) {
+                updateLog(LogLevel.DEBUG, "--Your device is now Client--")
                 deviceType = DeviceType.CENTRAL
+                //updateUi(deviceType)
                 blePeripheralManager.stopAdvertising()
                 bleCentralManager.startScan()
-                updateLog("I: --Your device is now Client--")
             } else {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
             }
@@ -82,10 +92,12 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
         binding.btnPeripheralMode.setOnClickListener {
             if (hasPermissions()) {
+                updateLog(LogLevel.DEBUG, "--Your device is now Server--")
                 deviceType = DeviceType.PERIPHERAL
+                //updateUi(deviceType)
+                //clearDeviceList()
                 bleCentralManager.stopScan()
                 blePeripheralManager.startAdvertising()
-                updateLog("I: --Your device is now Server--")
             } else {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
             }
@@ -105,31 +117,73 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 }
 
                 DeviceType.NONE -> {
-                    Toast.makeText(this, "Choose Central or Peripheral", Toast.LENGTH_SHORT).show()
+                    updateLog(LogLevel.WARN, "Choose Client or Server")
                 }
             }
 
             hideKeyboard(this, binding.etMessage)
         }
+        updateLog(LogLevel.INFO, "App Version: $version")
+    }
+
+    private fun clearDeviceList() {
+        deviceNames.clear()
+        deviceAdapter.notifyDataSetChanged()
+    }
+
+    private fun updateUi(deviceType: DeviceType) {
+        when (deviceType) {
+            DeviceType.CENTRAL, DeviceType.NONE -> binding.listViewBluetoothDevices.visibility =
+                View.VISIBLE
+
+            DeviceType.PERIPHERAL -> binding.listViewBluetoothDevices.visibility = View.GONE
+        }
+    }
+
+    private fun checkPermissionsAndStates() {
+        if (!hasPermissions()) {
+            ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
+        } else {
+            val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+            val bluetoothAdapter = bluetoothManager.adapter
+            if (bluetoothAdapter?.isEnabled == false) {
+                val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT)
+            } else {
+                checkLocationEnabled()
+            }
+        }
+    }
+
+    private fun checkLocationEnabled() {
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val isLocationEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+        if (!isLocationEnabled) {
+            startActivityForResult(
+                Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS),
+                REQUEST_LOCATION
+            )
+        }
     }
 
     private fun hasPermissions(): Boolean {
         return permissions.all {
-            ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     override fun onConnected() {
         runOnUiThread {
-            Toast.makeText(this, "Connected to BLE device", Toast.LENGTH_SHORT).show()
-            updateLog("I: Sending message 'Hello BLE Device!'")
+            updateLog(LogLevel.DEBUG, "Sending message 'Hello BLE Device!'")
             bleCentralManager.sendMessage("Hello BLE Device!")
         }
     }
 
     override fun onMessageReceived(message: String) {
         runOnUiThread {
-            updateLog("Received: $message")
+            updateLog(LogLevel.INFO, "Received: $message")
         }
     }
 
@@ -141,29 +195,61 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                bleCentralManager.startScan()
+                checkPermissionsAndStates()
             } else {
                 Toast.makeText(this, "Permissions denied", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    override fun onLog(message: String) {
-        updateLog(message)
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            REQUEST_ENABLE_BT -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    checkLocationEnabled()
+                } else {
+                    Toast.makeText(this, "Bluetooth must be enabled.", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            REQUEST_LOCATION -> {
+                checkLocationEnabled()
+            }
+        }
     }
 
-    private fun updateLog(message: String) {
-        runOnUiThread {
-            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-            binding.tvLog.append("\n[$timestamp] $message")
+    override fun onLog(logLevel: LogLevel, message: String) {
+        updateLog(logLevel, message)
+    }
 
+    private fun updateLog(level: LogLevel, message: String) {
+        val isLogAllowed = when (logFilter) {
+            LogFilter.DEV -> true
+            LogFilter.QA -> level == LogLevel.INFO || level == LogLevel.WARN || level == LogLevel.ERROR
+        }
+
+        if (!isLogAllowed)
+            return
+
+        runOnUiThread {
+            /*val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            binding.tvLog.append("\n[$timestamp] $message")*/
+            binding.tvLog.append("\n[${level.tag}] $message")
             binding.scrollView.post {
                 binding.scrollView.fullScroll(View.FOCUS_DOWN)
             }
         }
     }
 
+    private fun hideKeyboard(context: Context, view: View) {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(view.windowToken, 0)
+    }
+
     companion object {
         private const val PERMISSION_REQUEST_CODE = 1
+        private const val REQUEST_ENABLE_BT = 2
+        private const val REQUEST_LOCATION = 3
     }
 }
