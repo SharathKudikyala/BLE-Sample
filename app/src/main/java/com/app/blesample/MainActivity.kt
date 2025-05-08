@@ -11,6 +11,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.app.blesample.databinding.ActivityMainBinding
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
@@ -63,7 +66,6 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
         binding.tvLog.movementMethod = ScrollingMovementMethod()
         binding.listViewBluetoothDevices.setOnItemClickListener { _, _, position, _ ->
             val device = foundDevices[position]
-            updateLog("Connecting to Device : ${device.name}")
             bleCentralManager.connectToDevice(device)  // you'll expose this function from BLEManager
         }
 
@@ -72,6 +74,7 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 deviceType = DeviceType.CENTRAL
                 blePeripheralManager.stopAdvertising()
                 bleCentralManager.startScan()
+                updateLog("I: --Your device is now Client--")
             } else {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
             }
@@ -82,6 +85,7 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 deviceType = DeviceType.PERIPHERAL
                 bleCentralManager.stopScan()
                 blePeripheralManager.startAdvertising()
+                updateLog("I: --Your device is now Server--")
             } else {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
             }
@@ -97,7 +101,7 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 }
 
                 DeviceType.PERIPHERAL -> {
-                    blePeripheralManager.sendMessageToCentral(message)
+                    blePeripheralManager.sendMessageToAllCentrals(message)
                 }
 
                 DeviceType.NONE -> {
@@ -105,6 +109,7 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 }
             }
 
+            hideKeyboard(this, binding.etMessage)
         }
     }
 
@@ -149,22 +154,13 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
     private fun updateLog(message: String) {
         runOnUiThread {
-            binding.tvLog.append("\n$message")
+            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            binding.tvLog.append("\n[$timestamp] $message")
+
             binding.scrollView.post {
                 binding.scrollView.fullScroll(View.FOCUS_DOWN)
             }
         }
-    }
-
-    private fun generateRandomMessage(): String {
-        val messages = listOf(
-            "hi",
-            "hello",
-            "how are you?",
-            "great",
-            "Keep doing"
-        )
-        return messages.random()
     }
 
     companion object {

@@ -1,7 +1,18 @@
 package com.app.blesample
 
-import android.bluetooth.*
-import android.bluetooth.le.*
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothGattServer
+import android.bluetooth.BluetoothGattServerCallback
+import android.bluetooth.BluetoothGattService
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.AdvertiseCallback
+import android.bluetooth.le.AdvertiseData
+import android.bluetooth.le.AdvertiseSettings
+import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.ParcelUuid
 import android.util.Log
@@ -15,7 +26,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
     private val bluetoothAdapter = bluetoothManager.adapter
     private var advertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
-    private var connectedDevice: BluetoothDevice? = null
+    private var connectedDevices: MutableSet<BluetoothDevice> = mutableSetOf()
 
     fun startAdvertising() {
         if (!bluetoothAdapter.isMultipleAdvertisementSupported) {
@@ -53,7 +64,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
     }
 
     private fun startGattServer() {
-        callback.onLog("I: startGattServer")
+        callback.onLog("I: Start Gatt Server")
         gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
 
         val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
@@ -88,12 +99,16 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
     private val gattServerCallback = object : BluetoothGattServerCallback() {
 
         override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
-            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                connectedDevice = device
-                callback.onLog("Peripheral: Connected to ${device?.address}")
-            } else {
-                connectedDevice = null
-                callback.onLog("Peripheral: Disconnected from ${device?.address}")
+            device?.let {
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    connectedDevices.add(device)
+                    callback.onLog("I: Server Connected to ${device.address}")
+                    callback.onLog("I: Server Connected Clients Count = ${connectedDevices.size}")
+                } else {
+                    connectedDevices.remove(device)
+                    callback.onLog("I: Server Disconnected from ${device.address}")
+                    callback.onLog("I: Server Connected Clients Count = ${connectedDevices.size}")
+                }
             }
         }
 
@@ -102,7 +117,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             characteristic: BluetoothGattCharacteristic?
         ) {
             if (characteristic?.uuid == CHARACTERISTIC_UUID) {
-                val value = "Peripheral Ready".toByteArray(Charsets.UTF_8)
+                val value = "Server Ready".toByteArray(Charsets.UTF_8)
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value)
                 callback.onLog("I: Read request from ${device?.address}")
             }
@@ -113,7 +128,7 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?
         ) {
             val message = value?.toString(Charsets.UTF_8)
-            callback.onLog("I: Message received from central: $message")
+            callback.onLog("I: Message from ${device?.address}: $message")
 
             if (responseNeeded) {
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
@@ -134,11 +149,12 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?
         ) {
             if (descriptor?.uuid == DESCRIPTOR_UUID) {
-                descriptor.value = if (value contentEquals BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) {
-                    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                } else {
-                    BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-                }
+                descriptor.value =
+                    if (value contentEquals BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) {
+                        BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    } else {
+                        BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+                    }
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
                 callback.onLog("I: Notification subscription change from ${device?.address}")
             }
@@ -151,22 +167,24 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
         gattServer?.close()
     }
 
-    fun sendMessageToCentral(message: String) {
-        val device = connectedDevice ?: return
+    fun sendMessageToAllCentrals(message: String) {
         val service = gattServer?.getService(SERVICE_UUID) ?: return
         val characteristic = service.getCharacteristic(NOTIFY_CHARACTERISTIC_UUID) ?: return
 
         characteristic.value = message.toByteArray(Charsets.UTF_8)
-        gattServer?.notifyCharacteristicChanged(device, characteristic, false)
+        for (device in connectedDevices) {
+            gattServer?.notifyCharacteristicChanged(device, characteristic, false)
+        }
 
-        callback.onLog("Peripheral: Sent message to central -> $message")
+        callback.onLog("I: Server Sent message to central -> $message")
     }
 
     companion object {
         private const val TAG = "BLEPeripheralManager"
         val SERVICE_UUID: UUID = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb")
         val CHARACTERISTIC_UUID: UUID = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb")
-        val NOTIFY_CHARACTERISTIC_UUID: UUID = UUID.fromString("0000ffe2-0000-1000-8000-00805f9b34fb")
+        val NOTIFY_CHARACTERISTIC_UUID: UUID =
+            UUID.fromString("0000ffe2-0000-1000-8000-00805f9b34fb")
         val DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 }

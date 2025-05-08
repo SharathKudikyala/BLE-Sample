@@ -55,8 +55,7 @@
             android:overScrollMode="always"
             android:scrollbars="vertical"
             android:text="Logger:"
-            android:textSize="12sp"
-            android:textStyle="italic" />
+            android:textSize="10sp" />
     </ScrollView>
 
     <EditText
@@ -64,7 +63,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="8dp"
-        android:hint="Enter a message to send"
+        android:hint="Enter a message - v1.1"
         android:maxLines="1"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@id/ibSendMessage"
@@ -74,9 +73,9 @@
         android:id="@+id/ibSendMessage"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:backgroundTint="@android:color/white"
+        android:backgroundTint="@android:color/transparent"
         android:src="@android:drawable/ic_menu_send"
-        android:tint="@android:color/holo_blue_light"
+        android:tint="@android:color/black"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/etMessage" />

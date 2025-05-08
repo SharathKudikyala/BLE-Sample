@@ -1,7 +1,16 @@
 package com.app.blesample
 
-import android.bluetooth.*
-import android.bluetooth.le.*
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -45,16 +54,16 @@ class BLECentralManager(private val context: Context, private val callback: BLEC
 
         Handler(Looper.getMainLooper()).postDelayed({
             stopScan()
-            callback.onLog("I: Scan timeout - stopped")
+            //callback.onLog("I: Scan timeout - stopped")
         }, 20000)
     }
 
     fun stopScan() {
         bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
-        callback.onLog("I: Scan stopped")
     }
 
     fun connectToDevice(device: BluetoothDevice) {
+        callback.onLog("I: Connecting to device = ${device.name}")
         bluetoothGatt = device.connectGatt(context, false, gattCallback)
     }
 
@@ -74,7 +83,8 @@ class BLECentralManager(private val context: Context, private val callback: BLEC
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 val service = gatt.getService(BLEPeripheralManager.SERVICE_UUID)
                 val writeChar = service?.getCharacteristic(BLEPeripheralManager.CHARACTERISTIC_UUID)
-                val notifyChar = service?.getCharacteristic(BLEPeripheralManager.NOTIFY_CHARACTERISTIC_UUID)
+                val notifyChar =
+                    service?.getCharacteristic(BLEPeripheralManager.NOTIFY_CHARACTERISTIC_UUID)
 
                 if (writeChar == null) {
                     callback.onLog("E: Write Characteristic not found")
@@ -90,7 +100,6 @@ class BLECentralManager(private val context: Context, private val callback: BLEC
                 val props = notifyChar.properties
                 val isNotifiable = props and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
                 callback.onLog("I: Notify Char - isNotifiable = $isNotifiable")
-
                 if (isNotifiable) {
                     val notifySuccess = gatt.setCharacteristicNotification(notifyChar, true)
                     callback.onLog("I: setCharacteristicNotification() = $notifySuccess")
@@ -123,7 +132,7 @@ class BLECentralManager(private val context: Context, private val callback: BLEC
         ) {
             val message = characteristic.value.toString(Charsets.UTF_8)
             callback.onLog("I: Notification received: $message")
-            callback.onMessageReceived(message)
+            //callback.onMessageReceived(message)
         }
 
         override fun onCharacteristicWrite(
@@ -131,7 +140,7 @@ class BLECentralManager(private val context: Context, private val callback: BLEC
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
-            callback.onLog("I: Message sent to Peripheral, status = $status")
+            callback.onLog("I: Message sent to Server, status = $status")
         }
     }
 
