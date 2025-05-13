@@ -12,14 +12,17 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.provider.Settings
 import android.text.method.ScrollingMovementMethod
+import android.util.Log
 import android.view.View
-import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.app.blesample.ble.BLECentralManager
+import com.app.blesample.ble.BLEPeripheralManager
 import com.app.blesample.databinding.ActivityMainBinding
+import com.app.blesample.helpers.BluetoothStateMonitor
 
 class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
@@ -28,9 +31,9 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
     private lateinit var bleCentralManager: BLECentralManager
     private lateinit var blePeripheralManager: BLEPeripheralManager
     private lateinit var deviceAdapter: ArrayAdapter<String>
-    private val foundDevices = mutableListOf<BluetoothDevice>()
+    private val foundDevices = mutableMapOf<String, BluetoothDevice>()
     private val deviceNames = mutableListOf<String>()
-    private val logFilter = LogFilter.QA
+    private val buildVariant = BuildVarient.DEV
 
     private val permissions = arrayOf(
         Manifest.permission.BLUETOOTH_SCAN,
@@ -48,6 +51,24 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
         NONE
     }
 
+    private val bluetoothStateMonitor = BluetoothStateMonitor(
+        context = this,
+        onBluetoothTurnedOn = {
+            when (deviceType) {
+                DeviceType.CENTRAL -> bleCentralManager.startAsCentral()
+                DeviceType.PERIPHERAL -> blePeripheralManager.startAdvertising()
+                else -> Unit
+            }
+        },
+        onBluetoothTurnedOff = {
+            when (deviceType) {
+                DeviceType.CENTRAL -> bleCentralManager.stopAsCentral()
+                DeviceType.PERIPHERAL -> blePeripheralManager.stopAdvertising()
+                else -> Unit
+            }
+        }, this
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -61,10 +82,11 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
         checkPermissionsAndStates()
 
-        bleCentralManager.scanResultListener = { device ->
+        bleCentralManager.scanResultListener = { device, deviceUniqueID ->
             runOnUiThread {
-                if (!foundDevices.contains(device)) {
-                    foundDevices.add(device)
+                val alreadyFound = foundDevices.containsKey(deviceUniqueID)
+                foundDevices[deviceUniqueID] = device //insert or update
+                if (!alreadyFound) {
                     val name = device.name ?: "Unnamed (${device.address})"
                     deviceNames.add(name)
                     deviceAdapter.notifyDataSetChanged()
@@ -74,8 +96,9 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
         binding.tvLog.movementMethod = ScrollingMovementMethod()
         binding.listViewBluetoothDevices.setOnItemClickListener { _, _, position, _ ->
-            val device = foundDevices[position]
-            bleCentralManager.connectToDevice(device)
+            val device = foundDevices.values.elementAt(position)
+            val deviceUniqueID = foundDevices.keys.elementAt(position)
+            bleCentralManager.connectToDevice(device, deviceUniqueID)
         }
 
         binding.btnCentralMode.setOnClickListener {
@@ -83,8 +106,9 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 updateLog(LogLevel.DEBUG, "--Your device is now Client--")
                 deviceType = DeviceType.CENTRAL
                 //updateUi(deviceType)
+                bleCentralManager.stopAsCentral()
                 blePeripheralManager.stopAdvertising()
-                bleCentralManager.startScan()
+                bleCentralManager.startAsCentral()
             } else {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
             }
@@ -96,7 +120,8 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 deviceType = DeviceType.PERIPHERAL
                 //updateUi(deviceType)
                 //clearDeviceList()
-                bleCentralManager.stopScan()
+                blePeripheralManager.stopAdvertising()
+                bleCentralManager.stopAsCentral()
                 blePeripheralManager.startAdvertising()
             } else {
                 ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
@@ -123,7 +148,18 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
 
             hideKeyboard(this, binding.etMessage)
         }
+
         updateLog(LogLevel.INFO, "App Version: $version")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        bluetoothStateMonitor.start()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        bluetoothStateMonitor.stop()
     }
 
     private fun clearDeviceList() {
@@ -224,9 +260,9 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
     }
 
     private fun updateLog(level: LogLevel, message: String) {
-        val isLogAllowed = when (logFilter) {
-            LogFilter.DEV -> true
-            LogFilter.QA -> level == LogLevel.INFO || level == LogLevel.WARN || level == LogLevel.ERROR
+        val isLogAllowed = when (buildVariant) {
+            BuildVarient.DEV -> true
+            BuildVarient.QA -> level == LogLevel.INFO || level == LogLevel.WARN || level == LogLevel.ERROR
         }
 
         if (!isLogAllowed)
@@ -240,14 +276,11 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
                 binding.scrollView.fullScroll(View.FOCUS_DOWN)
             }
         }
-    }
-
-    private fun hideKeyboard(context: Context, view: View) {
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(view.windowToken, 0)
+        Log.d(TAG, "[$level] $message")
     }
 
     companion object {
+        private const val TAG = "BLE_SAMPLE"
         private const val PERMISSION_REQUEST_CODE = 1
         private const val REQUEST_ENABLE_BT = 2
         private const val REQUEST_LOCATION = 3

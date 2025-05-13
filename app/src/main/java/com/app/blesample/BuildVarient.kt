@@ -1,5 +1,5 @@
 package com.app.blesample
 
-enum class LogFilter {
+enum class BuildVarient {
     DEV, QA
 }

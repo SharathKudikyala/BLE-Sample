@@ -1,4 +1,4 @@
-package com.app.blesample
+package com.app.blesample.ble
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -15,8 +15,10 @@ import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.ParcelUuid
-import com.app.blesample.BLECentralManager.BLECallback
-import java.util.UUID
+import com.app.blesample.LogLevel
+import com.app.blesample.UniqueIdProvider
+import com.app.blesample.ble.BLECentralManager.BLECallback
+import java.util.concurrent.CopyOnWriteArraySet
 
 class BLEPeripheralManager(private val context: Context, private val callback: BLECallback) {
 
@@ -25,13 +27,14 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
     private val bluetoothAdapter = bluetoothManager.adapter
     private var advertiser: BluetoothLeAdvertiser? = null
     private var gattServer: BluetoothGattServer? = null
-    private var connectedDevices: MutableSet<BluetoothDevice> = mutableSetOf()
+    private var connectedDevices: MutableSet<BluetoothDevice> = CopyOnWriteArraySet()
 
     fun startAdvertising() {
         if (!bluetoothAdapter.isMultipleAdvertisementSupported) {
             callback.onLog(LogLevel.ERROR, "BLE Advertising not supported on this device")
             return
         }
+
 
         advertiser = bluetoothAdapter.bluetoothLeAdvertiser
 
@@ -40,9 +43,12 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
             .setConnectable(true)
             .build()
 
+        val uniqueId = UniqueIdProvider.getOrCreateId(context)
+        callback.onLog(LogLevel.DEBUG, "Device UniqueID = $uniqueId")
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
+            .setIncludeDeviceName(false)
             .addServiceUuid(ParcelUuid(SERVICE_UUID))
+            .addServiceData(ParcelUuid(SERVICE_DATA_UUID), uniqueId.toByteArray(Charsets.UTF_8))
             .build()
 
         advertiser?.startAdvertising(settings, data, advertiseCallback)
@@ -167,9 +173,27 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
     }
 
     fun stopAdvertising() {
-        callback.onLog(LogLevel.INFO, "Advertising Stopped")
-        advertiser?.stopAdvertising(advertiseCallback)
-        gattServer?.close()
+        callback.onLog(LogLevel.DEBUG, "Stopping BLE Advertising...")
+
+        try {
+            advertiser?.let { adv ->
+                adv.stopAdvertising(advertiseCallback)
+                callback.onLog(LogLevel.INFO, "BLE Advertising stopped successfully.")
+            }
+        } catch (e: Exception) {
+            callback.onLog(LogLevel.ERROR, "Error stopping advertising: ${e.message}")
+        } finally {
+            advertiser = null
+        }
+
+        try {
+            gattServer?.close()
+            callback.onLog(LogLevel.DEBUG, "GATT Server closed.")
+        } catch (e: Exception) {
+            callback.onLog(LogLevel.ERROR, "Error closing GATT Server: ${e.message}")
+        } finally {
+            gattServer = null // Nullify to prevent reuse
+        }
     }
 
     fun sendMessageToAllCentrals(message: String) {
@@ -184,12 +208,21 @@ class BLEPeripheralManager(private val context: Context, private val callback: B
         callback.onLog(LogLevel.INFO, "Server Sent message to client -> $message")
     }
 
+    // Optional cleanup on disconnect
+    private fun clearNotifyCharacteristic() {
+        val service = gattServer?.getService(SERVICE_UUID) ?: return
+        val characteristic = service.getCharacteristic(NOTIFY_CHARACTERISTIC_UUID) ?: return
+        characteristic.value = ByteArray(0) // Reset the value to prevent stale data
+    }
+
+    // Helper function for future service reconfiguration
+    private fun resetGattServer() {
+        gattServer?.close()
+        gattServer = null
+        startGattServer() // Rebuild the GATT server
+    }
+
     companion object {
         private const val TAG = "BLEPeripheralManager"
-        val SERVICE_UUID: UUID = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb")
-        val CHARACTERISTIC_UUID: UUID = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb")
-        val NOTIFY_CHARACTERISTIC_UUID: UUID =
-            UUID.fromString("0000ffe2-0000-1000-8000-00805f9b34fb")
-        val DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 }
