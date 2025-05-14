@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity(), BLECentralManager.BLECallback {
     private lateinit var deviceAdapter: ArrayAdapter<String>
     private val foundDevices = mutableMapOf<String, BluetoothDevice>()
     private val deviceNames = mutableListOf<String>()
-    private val buildVariant = BuildVarient.DEV
+    private val buildVariant = BuildVarient.QA
 
     private val permissions = arrayOf(
         Manifest.permission.BLUETOOTH_SCAN,
